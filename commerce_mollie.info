@@ -1,0 +1,6 @@
+name = Commerce Mollie
+description = Implements Mollie payment services for use with Drupal Commerce. Accept iDEAL, Mister Cash, Creditcard, bank transfer, PayPal, and paysafecard online payments without fixed monthly costs or any punishing registration procedures.
+core = 7.x
+package = Commerce - Payment
+dependencies[] = commerce
+dependencies[] = commerce_payment
