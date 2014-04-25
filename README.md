@@ -1,4 +1,4 @@
-commerce_mollie
+Commerce Mollie
 ===============
 
 Drupal Commerce Payment module for Mollie Payment Services
