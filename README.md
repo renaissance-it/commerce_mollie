@@ -31,7 +31,7 @@ Installation & configuration
 4. Edit the *Enable payment method: Mollie* action.
 5. Fill in your Mollie API keys, choose whether you want to enable the test
    mode and save the action. You can find and manage your Mollie API keys at:
-   https://www.mollie.nl/beheer/account/profielen](https://www.mollie.nl/beheer/account/profielen
+   https://www.mollie.nl/beheer/account/profielen
 
 Warning
 -------
