@@ -5,7 +5,7 @@ Summary
 -------
 Drupal Commerce Payment module for Mollie Payment Services
 
-Implements [Mollie payment services](http://www.mollie.com) for use with Drupal Commerce.
+Implements Mollie payment services for use with Drupal Commerce.
 
 Accept iDEAL, Mister Cash, Creditcard, bank transfer, PayPal, and
 paysafecard online payments without fixed monthly costs or any punishing
@@ -19,19 +19,20 @@ To submit bug reports and feature suggestions, or to track changes:
 
 Requirements
 ------------
-* [Drupal Commerce](http://drupal.org/project/commerce)
-* A Mollie account which can accept online payments like iDEAL, Paypal etc.
+* Drupal Commerce, see: http://drupal.org/project/commerce)
+* A Mollie account which can accept online payments like iDEAL, Paypal etc, see:
+  http://www.mollie.com
 
 Installation & configuration
 ----------------------------
 1. Install as usual, For more information on installing modules see:
    https://drupal.org/documentation/install/modules-themes/modules-7
-2. Go to *admin/commerce/config/payment-methods*
-3. Edit the *Commerce Mollie* option.
-4. Edit the *Enable payment method: Mollie* action.
+2. Go to 'admin/commerce/config/payment-methods'
+3. Edit the 'Commerce Mollie' option.
+4. Edit the 'Enable payment method: Mollie' action.
 5. Fill in your Mollie API keys, choose whether you want to enable the test
    mode and save the action. You can find and manage your Mollie API keys at:
-   https://www.mollie.nl/beheer/account/profielen](https://www.mollie.nl/beheer/account/profielen
+   https://www.mollie.nl/beheer/account/profielen/
 
 Warning
 -------
@@ -40,7 +41,9 @@ production environment. Use at own risk.
 
 License
 -------
-This module is licensed under the [GNU General Public License version 2](http://www.gnu.org/licenses/old-licenses/gpl-2.0.html)
+This module is licensed under the GNU General Public License version 2, see:
+
+http://www.gnu.org/licenses/old-licenses/gpl-2.0.html
 
 Credits
 -------
