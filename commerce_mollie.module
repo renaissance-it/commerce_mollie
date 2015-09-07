@@ -14,6 +14,15 @@
 require "Mollie/API/Autoloader.php";
 
 /**
+ * Implements hook_init().
+ */
+function commerce_mollie_init() {
+  if (strtolower(commerce_default_currency()) != 'eur') {
+    drupal_set_message(t('The Commerce Mollie payment module only supports the Euro as the default currency'), 'error');
+  }
+}
+
+/**
  * Implements hook_menu().
  */
 function commerce_mollie_menu() {
@@ -25,25 +34,58 @@ function commerce_mollie_menu() {
     'type' => MENU_CALLBACK,
   );
 
-  $items['commerce_mollie/return/%/%'] = array(
+  $items['checkout/%commerce_order/payment/response/%'] = array(
     'title' => 'Commerce Mollie Payment',
     'page callback' => 'commerce_mollie_return',
-    'page arguments' => array(2, 3),
+    'page arguments' => array(1, 4),
     'access arguments' => array('access content'),
     'type' => MENU_CALLBACK,
+  );
+
+  $items['admin/commerce/orders/%commerce_order/payment/%commerce_payment_transaction/mollie-status-request'] = array(
+    'title' => 'Request payment status',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('commerce_mollie_request_payment_status_form', 3, 5),
+    'access callback' => 'commerce_mollie_transfer_transaction_confirm_access',
+    'access arguments' => array(3, 5),
+    'type' => MENU_DEFAULT_LOCAL_TASK,
+    'context' => MENU_CONTEXT_INLINE,
+    'weight' => 2,
   );
 
   return $items;
 }
 
 /**
- * Implements hook_init().
+ * Implements hook_permission().
  */
-function commerce_mollie_init() {
-  if (strtolower(commerce_default_currency()) != 'eur') {
-    drupal_set_message(t('The Commerce Mollie payment module only supports the Euro as the default currency'), 'error');
-  }
+function commerce_mollie_permission() {
+  $perms = array();
+
+  $perms['mollie payment status request'] = array(
+    'title' => t('Request payment status'),
+    'description' => t('Perform a request with Mollie about the status of a Payment.'),
+  );
+
+  return $perms;
 }
+
+/**
+ * Access callback function to limit access to Mollie payments.
+ */
+function commerce_mollie_transfer_transaction_confirm_access($order, $transaction = NULL, $account = NULL) {
+  if (user_access('mollie payment status request')) {
+    $access = commerce_payment_transaction_access('update', $transaction, $account);
+    if ($access && $transaction) {
+      if ($transaction->payment_method != 'commerce_mollie') {
+        $access = FALSE;
+      }
+    }
+    return $access;
+  }
+  return FALSE;
+}
+
 
 /**
  * Implements hook_commerce_payment_method_info().
@@ -130,7 +172,7 @@ function commerce_mollie_redirect_form($form, &$form_state, $order, $payment_met
   commerce_payment_transaction_save($transaction);
 
   // The url of the page the customer should be returned back to by Mollie.
-  $redirect_url = url('checkout/' . $order->order_id . '/payment/return/' . $order->data['payment_redirect_key'], array('absolute' => TRUE));
+  $redirect_url = url('checkout/' . $order->order_id . '/payment/response/' . $order->data['payment_redirect_key'], array('absolute' => TRUE));
 
   // The webhook url Mollie should callback to update the transaction status.
   $webhook_url = url('commerce_mollie/webhook', array('absolute' => TRUE));
@@ -176,6 +218,61 @@ function commerce_mollie_redirect_form($form, &$form_state, $order, $payment_met
   }
 
   return $form;
+}
+
+/**
+ * Response return url for Mollie.
+ *
+ * We have a intermediate url to retrieve the payment status. This is not
+ * returned by the Mollie on the redirect url.
+ *
+ * @param $order
+ * @param $payment_redirect_key
+ *
+ * @return void
+ */
+function commerce_mollie_return($order, $payment_redirect_key) {
+
+  if ($payment_redirect_key == $order->data['payment_redirect_key']) {
+
+    // Load non failed payments.
+    $transaction_query = new EntityFieldQuery();
+    $transaction_query->entityCondition('entity_type', 'commerce_payment_transaction')
+      ->propertyCondition('status', 'failure', '!=')
+      ->propertyCondition('order_id', $order->order_id);
+
+    $transaction = $transaction_query->execute();
+    if (!empty($transaction['commerce_payment_transaction'])) {
+      $transaction = entity_load('commerce_payment_transaction', array_keys($transaction['commerce_payment_transaction']));
+      $transaction = reset($transaction);
+    } else {
+      $transaction = NULL;
+    }
+
+    if (!empty($transaction)) {
+      $transaction = commerce_mollie_request_status($order, $transaction);
+      commerce_payment_transaction_save($transaction);
+
+      if ($transaction->status == COMMERCE_PAYMENT_STATUS_FAILURE) {
+        drupal_set_message(t('You cancelled your payment. Please proceed again or choose a different payment option.'));
+        commerce_payment_redirect_pane_previous_page($order);
+        drupal_goto('checkout/' . $order->order_id . '/payment/back/' . $order->data['payment_redirect_key']);
+      } else {
+        commerce_payment_redirect_pane_next_page($order);
+        drupal_goto('checkout/' . $order->order_id . '/payment/return/' . $order->data['payment_redirect_key']);
+      }
+
+    }
+    // No transaction was found. We need to go back.
+    else {
+      commerce_payment_redirect_pane_previous_page($order);
+      drupal_goto('checkout/' . $order->order_id . '/payment/back/' . $order->data['payment_redirect_key']);
+    }
+
+  } else {
+    watchdog('commerce_mollie', 'Return payment url used with incorrect redirect key.', array(), WATCHDOG_WARNING);
+    drupal_not_found();
+  }
 }
 
 /**
@@ -227,6 +324,83 @@ function commerce_mollie_webhook() {
 }
 
 /**
+ * Retrieve a new status update about the payment.
+ *
+ * @param $form
+ * @param $form_state
+ * @param $order
+ * @param $transaction
+ *
+ * @return mixed
+ */
+function commerce_mollie_request_payment_status_form($form, &$form_state, $order, $transaction) {
+  $transaction = commerce_mollie_request_status($order, $transaction);
+  commerce_payment_transaction_save($transaction);
+
+  drupal_goto('admin/commerce/orders/' . $order->order_id . '/payment');
+
+  return $form;
+}
+
+/**
+ * Request new payment status.
+ *
+ * @param $order
+ * @param $transaction
+ *
+ * return stdClass
+ *  Returns updated transaction object.
+ */
+function commerce_mollie_request_status($order, $transaction) {
+  $payment_method = _commerce_mollie_get_payment_method_instance();
+
+  try {
+    $mollie = new Mollie_API_Client;
+    $mollie->setApiKey($payment_method['settings']['commerce_mollie_test_mode'] ? $payment_method['settings']['commerce_mollie_api_key_test'] : $payment_method['settings']['commerce_mollie_api_key_live']);
+
+    $payment = $mollie->payments->get($transaction->remote_id);
+    if (!empty($payment)) {
+
+      // Set status
+      switch ($payment->status) {
+        // Awaiting = COMMERCE_PAYMENT_STATUS_PENDING
+        case 'open':
+        case 'pending':
+          $transaction->status = COMMERCE_PAYMENT_STATUS_PENDING;
+          $transaction->remote_status = $payment->status;
+          $transaction->message = commerce_mollie_status_explained($payment->status);
+          break;
+
+        // Cancelled = COMMERCE_PAYMENT_STATUS_FAILURE
+        case 'cancelled':
+        case 'expired':
+          $transaction->status = COMMERCE_PAYMENT_STATUS_FAILURE;
+          $transaction->remote_status = $payment->status;
+          $transaction->message = commerce_mollie_status_explained($payment->status);
+          break;
+
+        // Paid = COMMERCE_PAYMENT_STATUS_SUCCESS
+        case 'paid':
+        case 'paidout':
+          $transaction->status = COMMERCE_PAYMENT_STATUS_SUCCESS;
+          $transaction->remote_status = $payment->status;
+          $transaction->message = commerce_mollie_status_explained($payment->status);
+          break;
+
+        default;
+          break;
+      }
+      return $transaction;
+    }
+  } catch (Mollie_API_Exception $e) {
+    watchdog('commerce_mollie', 'Could not retrieve payment information. Error: %error', array('%error' => htmlspecialchars($e->getMessage())), WATCHDOG_ERROR);
+    drupal_set_message(t('An error occured while retrieving payment status information from Mollie. Please try again later or contact your webmaster.'), 'error');
+  }
+
+  return $transaction;
+}
+
+/**
  * Returns the Mollie payment method instance.
  *
  * @return object|bool
@@ -269,4 +443,29 @@ function _commerce_mollie_api_key_element_validate($element, &$form_state, $form
       form_error($element, t('Your Mollie test API key should start with <em>test</em>.'));
     }
   }
+}
+
+/**
+ * Return a explaining message with the Mollie status.
+ *
+ * @param $status
+ *
+ * @return string
+ *   The explanation with a status.
+ */
+function commerce_mollie_status_explained($status) {
+  $status_messages = array(
+    'open' => t('The payment is created but nothing happened yet.'),
+    'cancelled' => t('The payment has been cancelled by the customer.'),
+    'pending' => t('The payment is in transit.'),
+    'expired' => t('The payment has expired.'),
+    'paid' => t('The payment has been paid.'),
+    'paidout' => t('The payment has been paid to your bank account.'),
+    'refunded' => t('The payment has had a refund to the customer.'),
+  );
+
+  if (array_key_exists($status, $status_messages)) {
+    return $status_messages[$status];
+  }
+  return '';
 }
