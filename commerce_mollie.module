@@ -115,6 +115,8 @@ function commerce_mollie_settings_form($settings = NULL) {
       'commerce_mollie_api_key_live' => '',
       'commerce_mollie_api_key_test' => '',
       'commerce_mollie_test_mode' => 0,
+      'commerce_mollie_redirect_page_button_text' => 'Pay via Mollie',
+      'commerce_mollie_redirect_page_text' => 'Continue with checkout to complete payment via Mollie.',
     );
 
   $form['commerce_mollie_api_key_live'] = array(
@@ -140,6 +142,22 @@ function commerce_mollie_settings_form($settings = NULL) {
     '#title' => t('Enable test mode'),
     '#description' => t('Check this option to enable test mode.'),
     '#default_value' => $settings['commerce_mollie_test_mode'],
+  );
+
+  $form['commerce_mollie_redirect_page_button_text'] = array(
+      '#type' => 'textfield',
+      '#title' => t('Payment button text'),
+      '#description' => t('The text of the payment button that redirects the user to the Mollie website.'),
+      '#default_value' => $settings['commerce_mollie_redirect_page_button_text'],
+      '#required' => TRUE,
+  );
+
+  $form['commerce_mollie_redirect_page_text'] = array(
+      '#type' => 'textarea',
+      '#title' => t('Payment page text'),
+      '#description' => t('The text displayed above the payment button that redirects the user to the Mollie website.'),
+      '#default_value' => $settings['commerce_mollie_redirect_page_text'],
+      '#required' => FALSE,
   );
 
   return $form;
@@ -203,12 +221,12 @@ function commerce_mollie_redirect_form($form, &$form_state, $order, $payment_met
     $form['#action'] = $payment->getPaymentUrl();
 
     $form['mollie_information'] = array(
-      '#markup' => '<p class="commerce-mollie-info">' . t('Continue with checkout to complete payment via Mollie.') . '</p>',
+      '#markup' => '<p class="commerce-mollie-info">' . t($payment_method['settings']['commerce_mollie_redirect_page_text']) . '</p>',
     );
 
     $form['submit'] = array(
       '#type' => 'submit',
-      '#value' => t('Pay via Mollie'),
+      '#value' => t($payment_method['settings']['commerce_mollie_redirect_page_button_text']),
     );
   }
   catch (Mollie_API_Exception $e) {
